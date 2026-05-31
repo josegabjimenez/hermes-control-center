@@ -1,0 +1,18 @@
+services:
+  hermes-control-center:
+    build: .
+    container_name: hermes-control-center
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - HERMES_WEB_TOKEN=changeme-strong-token
+      - HERMES_BIN=/usr/local/lib/hermes-agent/venv/bin/hermes
+      - HERMES_HOME=/root/.hermes
+      - FIREFLY_BASE_URL=${FIREFLY_BASE_URL:-http://localhost:8090}
+      - FIREFLY_API_TOKEN=${FIREFLY_API_TOKEN:-}
+    volumes:
+      - /usr/local/lib/hermes-agent:/usr/local/lib/hermes-agent:ro
+      - /root/.local/share/uv:/root/.local/share/uv:ro
+      - /root/.hermes:/root/.hermes
+    restart: unless-stopped

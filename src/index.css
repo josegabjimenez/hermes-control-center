@@ -1,0 +1,398 @@
+:root {
+  --bg-0: #021013;
+  --bg-1: #052126;
+  --line: rgba(189, 203, 179, 0.28);
+  --line-strong: rgba(201, 214, 191, 0.44);
+  --text: #dde3d3;
+  --muted: #a2ae97;
+  --accent: #dce5cc;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 25% 15%, rgba(16, 68, 62, 0.48), transparent 38%),
+    radial-gradient(circle at 80% 70%, rgba(11, 50, 46, 0.42), transparent 40%),
+    linear-gradient(180deg, var(--bg-1), var(--bg-0));
+  font-family: 'Spectral', 'Times New Roman', serif;
+  letter-spacing: 0.02em;
+}
+
+#root { min-height: 100vh; }
+
+.auth-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.auth-card {
+  width: min(520px, 95vw);
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem;
+  border: 1px solid var(--line-strong);
+  background: rgba(3, 20, 23, 0.7);
+}
+
+.auth-error { color: #ffb7b7; margin: 0; }
+
+.layout {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.mobile-header {
+  display: none;
+}
+
+.sidebar {
+  border-right: 1px solid var(--line);
+  padding: 1rem 0.8rem;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 0.8rem;
+  background: linear-gradient(180deg, rgba(3, 27, 30, 0.72), rgba(2, 19, 22, 0.92));
+}
+
+.logo-block, .panel, .error-box, .token-input, .query-box {
+  border: 1px solid var(--line);
+  background: rgba(3, 20, 23, 0.46);
+}
+
+.logo-block { padding: 0.75rem; }
+.logo-mark {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1.45rem;
+  line-height: 0.98;
+  color: var(--accent);
+}
+
+.token-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.token-input, .query-box {
+  width: 100%;
+  color: #eef5e5;
+  padding: 0.62rem;
+  font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  font-size: 0.8rem;
+}
+
+select.token-input option {
+  background: #052126;
+  color: #eef5e5;
+}
+
+.token-input.compact, .query-box.compact {
+  padding: 0.48rem;
+  font-size: 0.74rem;
+}
+
+.query-box { min-height: 120px; resize: vertical; }
+.query-box.compact { min-height: 72px; }
+
+.menu { display: grid; gap: 0.4rem; align-content: start; }
+
+.menu-item {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: rgba(5, 26, 28, 0.48);
+  color: var(--muted);
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.menu-item.active, .menu-item:hover, .menu-item.action {
+  color: var(--accent);
+  border-color: var(--line-strong);
+  background: rgba(18, 57, 50, 0.42);
+}
+
+.menu-item.full-width { width: 100%; text-align: center; }
+
+.content {
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+}
+
+.top-strip {
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: 1px solid var(--line);
+}
+
+.top-strip span {
+  display: grid;
+  place-items: center;
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.top-strip span:last-child { border-right: 0; }
+
+.error-box, .success-box {
+  margin: 0.8rem;
+  padding: 0.75rem;
+}
+
+.error-box { color: #ffb7b7; }
+
+.success-box {
+  border: 1px solid rgba(159, 221, 185, 0.48);
+  background: rgba(16, 74, 50, 0.34);
+  color: #bff1cf;
+}
+
+.panel-grid {
+  padding: 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.section-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+h1 {
+  margin: 0;
+  color: var(--accent);
+  font-size: clamp(1.3rem, 2.3vw, 2.2rem);
+}
+
+.lead { margin: 0; color: var(--muted); }
+
+.split-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+}
+
+.split-grid.small { grid-template-columns: 1fr 1fr; }
+
+.panel { padding: 0.8rem; min-height: 190px; }
+
+.actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.form-grid {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.agents-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.8rem;
+}
+
+.finance-hero .panel {
+  min-height: 360px;
+}
+
+.finance-actions {
+  margin: 0.8rem 0;
+}
+
+.finance-query {
+  min-height: 180px;
+  margin-bottom: 0.8rem;
+}
+
+code {
+  color: var(--accent);
+  font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+
+.kanban-columns {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 280px);
+  gap: 0.8rem;
+  overflow-x: auto;
+  padding-bottom: 0.4rem;
+}
+
+.kanban-column {
+  border: 1px solid var(--line);
+  background: rgba(3, 20, 23, 0.46);
+  padding: 0.7rem;
+  min-height: 280px;
+}
+
+.kanban-column-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.kanban-create-card {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px dashed var(--line);
+  background: rgba(7, 37, 36, 0.38);
+  padding: 0.55rem;
+  margin-bottom: 0.65rem;
+}
+
+.kanban-inline-fields {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.55fr) 1fr;
+  gap: 0.45rem;
+}
+
+.kanban-cards {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.kanban-card {
+  border: 1px solid var(--line);
+  background: rgba(4, 30, 28, 0.5);
+  padding: 0.55rem;
+}
+
+.kanban-card p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+h2 {
+  margin: 0 0 0.6rem;
+  font-size: 0.86rem;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #c7d5c0;
+  line-height: 1.45;
+  font-size: 0.79rem;
+  font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+
+@media (max-width: 980px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    border-left: 0;
+  }
+
+  .mobile-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    min-height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--line);
+    background: rgba(2, 16, 19, 0.94);
+    backdrop-filter: blur(12px);
+  }
+
+  .mobile-eyebrow {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+  }
+
+  .hamburger-button {
+    width: 44px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    gap: 4px;
+    padding: 0.55rem;
+    border: 1px solid var(--line-strong);
+    background: rgba(18, 57, 50, 0.42);
+    cursor: pointer;
+  }
+
+  .hamburger-button span {
+    width: 22px;
+    height: 2px;
+    display: block;
+    background: var(--accent);
+    transition: transform 180ms ease, opacity 180ms ease;
+  }
+
+  .menu-open .hamburger-button span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+  .menu-open .hamburger-button span:nth-child(2) { opacity: 0; }
+  .menu-open .hamburger-button span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+  .sidebar {
+    position: fixed;
+    inset: 64px 0 auto 0;
+    z-index: 19;
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    transform: translateY(-115%);
+    transition: transform 190ms ease;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
+  }
+
+  .menu-open .sidebar { transform: translateY(0); }
+
+  .menu { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .split-grid, .split-grid.small { grid-template-columns: 1fr; }
+  .top-strip { grid-template-columns: repeat(2, 1fr); }
+  .content { min-width: 0; }
+}
+
+@media (max-width: 700px) {
+  .panel-grid { padding: 0.75rem; }
+  .top-strip span:nth-child(3), .top-strip span:nth-child(4) { display: none; }
+  .top-strip { grid-template-columns: 1fr 1fr; }
+  .section-heading-row { display: grid; }
+  .kanban-columns {
+    grid-auto-columns: minmax(82vw, 88vw);
+    scroll-snap-type: x mandatory;
+  }
+  .kanban-column { scroll-snap-align: start; }
+}
+
+@media (max-width: 560px) {
+  .menu { grid-template-columns: 1fr; }
+  .kanban-inline-fields { grid-template-columns: 1fr; }
+  .actions-row .menu-item, .finance-actions .menu-item { width: 100%; text-align: center; }
+}

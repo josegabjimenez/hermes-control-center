@@ -41,6 +41,12 @@ type KanbanTaskForm = {
   priority: string
 }
 
+type KanbanAssigneeOption = {
+  value: string
+  label: string
+  kind: 'profile' | 'agent'
+}
+
 const sections: Array<{ key: SectionKey; label: string }> = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'agents', label: 'Agents / Status' },
@@ -90,7 +96,7 @@ function App() {
   const [overview, setOverview] = useState<any>(null)
   const [kanban, setKanban] = useState<any>(null)
   const [kanbanBoard, setKanbanBoard] = useState<any>(null)
-  const [kanbanAssignees, setKanbanAssignees] = useState<string[]>([])
+  const [kanbanAssignees, setKanbanAssignees] = useState<KanbanAssigneeOption[]>([])
   const [kanbanForms, setKanbanForms] = useState<Record<KanbanState, KanbanTaskForm>>(makeKanbanForms)
   const [kanbanActionMessage, setKanbanActionMessage] = useState('')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -188,7 +194,10 @@ function App() {
       ])
       setKanban(raw)
       setKanbanBoard(board)
-      setKanbanAssignees(Array.isArray(assignees.assignees) ? assignees.assignees : [])
+      const options = Array.isArray(assignees.options)
+        ? assignees.options
+        : (Array.isArray(assignees.assignees) ? assignees.assignees : []).map((value: string) => ({ value, label: value, kind: 'profile' }))
+      setKanbanAssignees(options)
     } catch (e: any) {
       setError(e.message || 'Failed to load kanban')
     } finally {
@@ -643,7 +652,7 @@ function App() {
                         >
                           <option value="">Unassigned</option>
                           {kanbanAssignees.map((assignee) => (
-                            <option key={assignee} value={assignee}>{assignee}</option>
+                            <option key={assignee.value} value={assignee.value}>{assignee.label} ({assignee.kind})</option>
                           ))}
                         </select>
                       </div>
@@ -669,7 +678,7 @@ function App() {
                               <option value="">Unassigned</option>
                               <option value="none">None</option>
                               {kanbanAssignees.map((assignee) => (
-                                <option key={assignee} value={assignee}>{assignee}</option>
+                                <option key={assignee.value} value={assignee.value}>{assignee.label} ({assignee.kind})</option>
                               ))}
                             </select>
                           </div>

@@ -6,7 +6,7 @@ services:
       - "8080:8080"
     environment:
       - PORT=8080
-      - HERMES_WEB_TOKEN=changeme-strong-token
+      - HERMES_WEB_TOKEN=${HERMES_WEB_TOKEN:-changeme-strong-token}
       - HERMES_BIN=/usr/local/lib/hermes-agent/venv/bin/hermes
       - HERMES_HOME=/root/.hermes
       - FIREFLY_BASE_URL=${FIREFLY_BASE_URL:-http://localhost:8090}

@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import path from 'node:path'
 import fs from 'node:fs'
+import { normalizeKanbanAssigneeOptions } from './kanbanAssignees.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -304,12 +305,13 @@ app.get('/api/hermes/kanban/board', async (_req, res) => {
 app.get('/api/hermes/kanban/assignees', async (_req, res) => {
   const result = await runHermes(['kanban', 'assignees', '--json'], 90000)
   const parsed = result.ok ? parseJsonSafe(result.stdout, []) : []
-  const assignees = Array.isArray(parsed)
-    ? parsed
-      .map((item) => (typeof item === 'string' ? item : item?.profile || item?.assignee || item?.name))
-      .filter((name) => name && name !== 'none')
-    : []
-  res.status(result.ok ? 200 : 500).json({ ok: result.ok, assignees: [...new Set(assignees)], raw: result })
+  const options = normalizeKanbanAssigneeOptions(parsed, readAgents())
+  res.status(result.ok ? 200 : 500).json({
+    ok: result.ok,
+    assignees: options.map((option) => option.value),
+    options,
+    raw: result,
+  })
 })
 
 app.post('/api/hermes/kanban/tasks', async (req, res) => {

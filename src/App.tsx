@@ -6,6 +6,7 @@ type SectionKey =
   | 'agents'
   | 'kanban'
   | 'multi-agent'
+  | 'collaboration'
   | 'finance'
   | 'models'
   | 'skills'
@@ -47,11 +48,42 @@ type KanbanAssigneeOption = {
   kind: 'profile' | 'agent'
 }
 
+type CollaborationMessage = {
+  id: string
+  author: string
+  role?: string
+  body: string
+  createdAt: string
+}
+
+type CollaborationTask = {
+  id: string
+  taskId?: string
+  from: string
+  to: string
+  type: string
+  question: string
+  requiredOutput: string
+  status: string
+  approvalRequired: boolean
+  messages: CollaborationMessage[]
+  createdAt: string
+  updatedAt: string
+}
+
+type CollaborationAgent = {
+  id: string
+  name: string
+  role?: string
+  canCollaborateWith?: string[]
+}
+
 const sections: Array<{ key: SectionKey; label: string }> = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'agents', label: 'Agents / Status' },
   { key: 'kanban', label: 'Kanban Board' },
   { key: 'multi-agent', label: 'Multi Agent' },
+  { key: 'collaboration', label: 'Collaboration' },
   { key: 'finance', label: 'Finance Agent' },
   { key: 'models', label: 'Models / Config' },
   { key: 'skills', label: 'Skills' },
@@ -107,6 +139,19 @@ function App() {
   const [agentForm, setAgentForm] = useState({ name: '', model: '', skills: '', rules: '', context: '' })
   const [runPromptByAgent, setRunPromptByAgent] = useState<Record<string, string>>({})
   const [runOutputByAgent, setRunOutputByAgent] = useState<Record<string, string>>({})
+
+  const [collaborationAgents, setCollaborationAgents] = useState<CollaborationAgent[]>([])
+  const [collaborationTasks, setCollaborationTasks] = useState<CollaborationTask[]>([])
+  const [handoffForm, setHandoffForm] = useState({
+    from: 'pipo',
+    to: 'megan',
+    type: 'financial_code_review',
+    taskId: '',
+    question: 'Megan, antes de tocar código financiero: ¿ves riesgos o criterios que deba validar?',
+    requiredOutput: 'Lista riesgos, datos necesarios y recomendación approve/block.',
+  })
+  const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({})
+  const [collaborationMessage, setCollaborationMessage] = useState('')
 
   const [financeStatus, setFinanceStatus] = useState<any>(null)
   const [financePrompt, setFinancePrompt] = useState('Raul, analiza mis gastos este mes y dame recomendaciones prácticas.')
@@ -304,6 +349,71 @@ function App() {
     }
   }
 
+  async function loadCollaboration() {
+    setLoading(true)
+    setError('')
+    try {
+      const data = await fetchJson('/api/agent-collaboration/tasks', { headers: authedHeaders })
+      setCollaborationTasks(Array.isArray(data.tasks) ? data.tasks : [])
+      setCollaborationAgents(Array.isArray(data.agents) ? data.agents : [])
+    } catch (e: any) {
+      setError(e.message || 'Failed to load collaboration tasks')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function createHandoff() {
+    if (!handoffForm.question.trim()) {
+      setError('Question is required for a handoff.')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    setCollaborationMessage('')
+    try {
+      const data = await fetchJson('/api/agent-handoff', {
+        method: 'POST',
+        headers: authedHeaders,
+        body: JSON.stringify(handoffForm),
+      })
+      setCollaborationMessage(`Created handoff ${data.task?.id || ''} (${data.task?.status || 'open'}).`)
+      setHandoffForm((prev) => ({ ...prev, taskId: '', question: '' }))
+      await loadCollaboration()
+    } catch (e: any) {
+      setError(e.message || 'Failed to create handoff')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function addCollaborationMessage(task: CollaborationTask, status?: string) {
+    const body = messageDrafts[task.id] || ''
+    if (!body.trim()) {
+      setError('Message body is required.')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    setCollaborationMessage('')
+    try {
+      await fetchJson(`/api/agent-collaboration/tasks/${encodeURIComponent(task.id)}/messages`, {
+        method: 'POST',
+        headers: authedHeaders,
+        body: JSON.stringify({ author: task.to, body, status }),
+      })
+      setMessageDrafts((prev) => ({ ...prev, [task.id]: '' }))
+      setCollaborationMessage(`Updated ${task.id}.`)
+      await loadCollaboration()
+    } catch (e: any) {
+      setError(e.message || 'Failed to add collaboration message')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function createMultiAgent() {
     setLoading(true)
     setError('')
@@ -482,6 +592,7 @@ function App() {
     if (!authenticated) return
     loadOverview()
     loadMultiAgents()
+    loadCollaboration()
   }, [authenticated])
 
   const statusPreview = overview?.status?.stdout || 'No data loaded yet.'
@@ -738,6 +849,95 @@ function App() {
                   />
                   <button className="menu-item action" onClick={() => runMultiAgent(agent.id)}>Run Now</button>
                   <pre>{runOutputByAgent[agent.id] || ''}</pre>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {active === 'collaboration' && (
+          <section className="panel-grid collaboration-section">
+            <div className="section-heading-row">
+              <div>
+                <h1>Agent Collaboration Layer</h1>
+                <p className="lead">Structured handoffs between Pipo and Megan. Pipo consults Megan before financial-code work; sensitive actions can require approval.</p>
+              </div>
+              <button className="menu-item action" onClick={loadCollaboration}>Reload</button>
+            </div>
+
+            {collaborationMessage ? <section className="success-box">{collaborationMessage}</section> : null}
+
+            <div className="split-grid">
+              <article className="panel">
+                <h2>Create Pipo → Megan Handoff</h2>
+                <div className="form-grid">
+                  <div className="collab-agent-row">
+                    <select className="token-input" value={handoffForm.from} onChange={(e) => setHandoffForm((p) => ({ ...p, from: e.target.value }))}>
+                      <option value="pipo">Pipo</option>
+                      <option value="megan">Megan</option>
+                    </select>
+                    <span className="handoff-arrow">→</span>
+                    <select className="token-input" value={handoffForm.to} onChange={(e) => setHandoffForm((p) => ({ ...p, to: e.target.value }))}>
+                      <option value="megan">Megan</option>
+                      <option value="pipo">Pipo</option>
+                    </select>
+                  </div>
+                  <input className="token-input" value={handoffForm.type} onChange={(e) => setHandoffForm((p) => ({ ...p, type: e.target.value }))} placeholder="Type: consultation / financial_write / production_deploy" />
+                  <input className="token-input" value={handoffForm.taskId} onChange={(e) => setHandoffForm((p) => ({ ...p, taskId: e.target.value }))} placeholder="Optional Kanban/task id" />
+                  <textarea className="query-box" value={handoffForm.question} onChange={(e) => setHandoffForm((p) => ({ ...p, question: e.target.value }))} placeholder="Question / context for the other agent" />
+                  <textarea className="query-box compact" value={handoffForm.requiredOutput} onChange={(e) => setHandoffForm((p) => ({ ...p, requiredOutput: e.target.value }))} placeholder="Required output" />
+                </div>
+                <button className="menu-item action" onClick={createHandoff}>Create Handoff</button>
+              </article>
+
+              <article className="panel">
+                <h2>Directory / Guardrails</h2>
+                <div className="directory-list">
+                  {collaborationAgents.map((agent) => (
+                    <div className="directory-card" key={agent.id}>
+                      <strong>{agent.name || agent.id}</strong>
+                      <p>{agent.role || 'Hermes agent'}</p>
+                      <p>Can collaborate with: {(agent.canCollaborateWith || []).join(', ') || '-'}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="lead">Allowed MVP pair: Pipo ↔ Megan. Types <code>financial_write</code> and <code>production_deploy</code> start in waiting_approval.</p>
+              </article>
+            </div>
+
+            <div className="collaboration-list">
+              {collaborationTasks.length === 0 ? <article className="panel"><p className="lead">No collaboration tasks yet.</p></article> : null}
+              {collaborationTasks.map((task) => (
+                <article className="panel collaboration-card" key={task.id}>
+                  <div className="collaboration-card-header">
+                    <div>
+                      <h2>{task.from} → {task.to} · {task.type}</h2>
+                      <p className="lead">{task.id}{task.taskId ? ` · task ${task.taskId}` : ''}</p>
+                    </div>
+                    <span className={`status-pill ${task.status}`}>{task.status}{task.approvalRequired ? ' · approval' : ''}</span>
+                  </div>
+                  <p><strong>Required output:</strong> {task.requiredOutput}</p>
+                  <div className="thread-list">
+                    {(task.messages || []).map((message) => (
+                      <div className="thread-message" key={message.id}>
+                        <strong>{message.author}</strong>
+                        <span>{new Date(message.createdAt).toLocaleString()}</span>
+                        <p>{message.body}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <textarea
+                    className="query-box compact"
+                    value={messageDrafts[task.id] || ''}
+                    onChange={(e) => setMessageDrafts((prev) => ({ ...prev, [task.id]: e.target.value }))}
+                    placeholder={`Reply as ${task.to}`}
+                  />
+                  <div className="actions-row">
+                    <button className="menu-item action" onClick={() => addCollaborationMessage(task)}>Add Reply</button>
+                    <button className="menu-item" onClick={() => addCollaborationMessage(task, 'approved')}>Reply + Approve</button>
+                    <button className="menu-item" onClick={() => addCollaborationMessage(task, 'blocked')}>Reply + Block</button>
+                    <button className="menu-item" onClick={() => addCollaborationMessage(task, 'done')}>Reply + Done</button>
+                  </div>
                 </article>
               ))}
             </div>

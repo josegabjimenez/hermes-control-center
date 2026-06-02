@@ -18,7 +18,24 @@ const FIREFLY_API_TOKEN = process.env.FIREFLY_API_TOKEN || ''
 
 const AGENT_STORE_DIR = path.join(HERMES_HOME, 'control-center')
 const AGENT_STORE_FILE = path.join(AGENT_STORE_DIR, 'multi-agents.json')
+const COLLABORATION_STORE_FILE = path.join(AGENT_STORE_DIR, 'agent-collaboration.json')
 const KANBAN_STATES = ['triage', 'todo', 'scheduled', 'ready', 'running', 'review', 'blocked', 'done', 'archived']
+const DEFAULT_COLLABORATION_AGENTS = [
+  {
+    id: 'pipo',
+    name: 'Pipo',
+    role: 'Code agent',
+    canCollaborateWith: ['megan'],
+  },
+  {
+    id: 'megan',
+    name: 'Megan',
+    role: 'Finance / product review agent',
+    canCollaborateWith: ['pipo'],
+  },
+]
+const COLLABORATION_ALLOWED_PAIRS = new Set(['pipo:megan', 'megan:pipo'])
+const APPROVAL_REQUIRED_TYPES = new Set(['financial_write', 'production_deploy'])
 
 app.use(cors())
 app.use(express.json({ limit: '1mb' }))
@@ -41,7 +58,7 @@ function requireAuth(req, res, next) {
   next()
 }
 
-async function runHermes(args = [], timeout = 120000) {
+async function runHermes(args = [], timeout = 120000, options = {}) {
   const env = {
     ...process.env,
     HERMES_HOME,
@@ -52,6 +69,7 @@ async function runHermes(args = [], timeout = 120000) {
       timeout,
       maxBuffer: 6 * 1024 * 1024,
       env,
+      cwd: options.cwd || undefined,
     })
 
     return {
@@ -100,6 +118,103 @@ function writeAgents(agents) {
   fs.writeFileSync(AGENT_STORE_FILE, JSON.stringify(agents, null, 2) + '\n', 'utf8')
 }
 
+function ensureCollaborationStore() {
+  fs.mkdirSync(AGENT_STORE_DIR, { recursive: true })
+  if (!fs.existsSync(COLLABORATION_STORE_FILE)) {
+    fs.writeFileSync(COLLABORATION_STORE_FILE, JSON.stringify({ tasks: [] }, null, 2) + '\n', 'utf8')
+  }
+}
+
+function readCollaborationStore() {
+  ensureCollaborationStore()
+  const raw = fs.readFileSync(COLLABORATION_STORE_FILE, 'utf8')
+  const parsed = parseJsonSafe(raw, { tasks: [] })
+  return {
+    tasks: Array.isArray(parsed?.tasks) ? parsed.tasks : [],
+  }
+}
+
+function writeCollaborationStore(store) {
+  ensureCollaborationStore()
+  fs.writeFileSync(COLLABORATION_STORE_FILE, JSON.stringify({ tasks: store.tasks || [] }, null, 2) + '\n', 'utf8')
+}
+
+function normalizeAgentKey(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function collaborationDirectory() {
+  const agentMap = new Map(DEFAULT_COLLABORATION_AGENTS.map((agent) => [agent.id, { ...agent }]))
+  for (const agent of readAgents()) {
+    const key = normalizeAgentKey(agent.id || agent.name)
+    const nameKey = normalizeAgentKey(agent.name)
+    const canonicalId = nameKey.includes('pipo') ? 'pipo' : nameKey.includes('megan') ? 'megan' : key
+    if (!canonicalId) continue
+    const current = agentMap.get(canonicalId) || { id: canonicalId, canCollaborateWith: [] }
+    agentMap.set(canonicalId, {
+      ...current,
+      sourceAgentId: agent.id,
+      name: agent.name || current.name || canonicalId,
+      role: current.role || (Array.isArray(agent.skills) && agent.skills.length ? agent.skills.join(', ') : 'Hermes multi-agent'),
+      model: agent.model || current.model || '',
+      provider: agent.provider || current.provider || '',
+      skills: Array.isArray(agent.skills) ? agent.skills : current.skills || [],
+      defaultWorkdir: agent.defaultWorkdir || current.defaultWorkdir || '',
+    })
+  }
+  return [...agentMap.values()].map((agent) => ({
+    ...agent,
+    canCollaborateWith: agent.id === 'pipo' ? ['megan'] : agent.id === 'megan' ? ['pipo'] : agent.canCollaborateWith || [],
+  }))
+}
+
+function isAllowedHandoff(from, to) {
+  return COLLABORATION_ALLOWED_PAIRS.has(`${normalizeAgentKey(from)}:${normalizeAgentKey(to)}`)
+}
+
+function isFinancialCodeQuestion(type, question) {
+  const text = stripDiacritics(`${type || ''} ${question || ''}`)
+  return normalizeAgentKey(type).includes('financial') || (text.includes('financ') && (text.includes('code') || text.includes('codigo') || text.includes('repo')))
+}
+
+function actionRequiresApproval(type) {
+  return APPROVAL_REQUIRED_TYPES.has(normalizeAgentKey(type))
+}
+
+function buildCollaborationTask(payload) {
+  const now = new Date().toISOString()
+  const from = normalizeAgentKey(payload.from || 'pipo')
+  const to = normalizeAgentKey(payload.to || 'megan')
+  const type = typeof payload.type === 'string' && payload.type.trim() ? payload.type.trim() : 'consultation'
+  const question = typeof payload.question === 'string' ? payload.question.trim() : ''
+  const requiredOutput = typeof payload.requiredOutput === 'string' && payload.requiredOutput.trim()
+    ? payload.requiredOutput.trim()
+    : 'Reply with concise guidance, risks, and an explicit approve/block recommendation when relevant.'
+  const approvalRequired = Boolean(payload.approvalRequired) || actionRequiresApproval(type)
+  return {
+    id: `handoff_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    taskId: typeof payload.taskId === 'string' && payload.taskId.trim() ? payload.taskId.trim() : '',
+    from,
+    to,
+    type,
+    question,
+    requiredOutput,
+    status: approvalRequired ? 'waiting_approval' : 'open',
+    approvalRequired,
+    messages: [
+      {
+        id: `msg_${Date.now().toString(36)}_0`,
+        author: from,
+        role: 'requester',
+        body: question,
+        createdAt: now,
+      },
+    ],
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
 function normalizeSkills(skills) {
   if (Array.isArray(skills)) {
     return skills.map((x) => String(x).trim()).filter(Boolean)
@@ -124,6 +239,68 @@ function normalizeStringList(value) {
       .filter(Boolean)
   }
   return []
+}
+
+function normalizeModelRouting(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const normalizeRoute = (route) => {
+    if (!route || typeof route !== 'object' || Array.isArray(route)) return null
+    const model = typeof route.model === 'string' ? route.model.trim() : ''
+    const provider = typeof route.provider === 'string' ? route.provider.trim() : ''
+    return model || provider ? { model, provider } : null
+  }
+  const rules = Array.isArray(value.rules)
+    ? value.rules
+        .map((rule) => {
+          if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return null
+          const route = normalizeRoute(rule)
+          if (!route?.model) return null
+          return {
+            intent: typeof rule.intent === 'string' ? rule.intent.trim() : '',
+            description: typeof rule.description === 'string' ? rule.description.trim() : '',
+            keywords: normalizeStringList(rule.keywords),
+            regex: typeof rule.regex === 'string' ? rule.regex.trim() : '',
+            model: route.model,
+            provider: route.provider,
+          }
+        })
+        .filter(Boolean)
+    : []
+  const fallback = normalizeRoute(value.default) || null
+  return fallback || rules.length ? { default: fallback, rules } : null
+}
+
+function stripDiacritics(text) {
+  return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+function selectRoutedModel(agent, prompt) {
+  const routing = normalizeModelRouting(agent?.modelRouting)
+  if (!routing) return { model: agent?.model || '', provider: agent?.provider || '', intent: 'default' }
+  const text = stripDiacritics(prompt)
+  for (const rule of routing.rules || []) {
+    const keywordMatch = (rule.keywords || []).some((keyword) => text.includes(stripDiacritics(keyword)))
+    let regexMatch = false
+    if (rule.regex) {
+      try {
+        regexMatch = new RegExp(rule.regex, 'i').test(prompt)
+      } catch {
+        regexMatch = false
+      }
+    }
+    if (keywordMatch || regexMatch) {
+      return {
+        model: rule.model || agent.model || routing.default?.model || '',
+        provider: rule.provider || agent.provider || routing.default?.provider || '',
+        intent: rule.intent || 'matched_rule',
+      }
+    }
+  }
+  return {
+    model: routing.default?.model || agent?.model || '',
+    provider: routing.default?.provider || agent?.provider || '',
+    intent: 'default',
+  }
 }
 
 async function fireflyRequest(pathname, query = {}) {
@@ -495,7 +672,7 @@ app.get('/api/multi-agents', (_req, res) => {
 })
 
 app.post('/api/multi-agents', (req, res) => {
-  const { name, model, provider, skills, toolsets, rules, context } = req.body || {}
+  const { name, model, provider, skills, toolsets, rules, context, modelRouting, discordChannelId, defaultWorkdir } = req.body || {}
   if (!name || typeof name !== 'string') {
     return res.status(400).json({ ok: false, error: 'name is required' })
   }
@@ -509,6 +686,9 @@ app.post('/api/multi-agents', (req, res) => {
     provider: typeof provider === 'string' ? provider.trim() : '',
     skills: normalizeSkills(skills),
     toolsets: normalizeStringList(toolsets),
+    modelRouting: normalizeModelRouting(modelRouting),
+    discordChannelId: typeof discordChannelId === 'string' ? discordChannelId.trim() : '',
+    defaultWorkdir: typeof defaultWorkdir === 'string' ? defaultWorkdir.trim() : '',
     rules: typeof rules === 'string' ? rules : '',
     context: typeof context === 'string' ? context : '',
     createdAt: now,
@@ -534,6 +714,9 @@ app.put('/api/multi-agents/:id', (req, res) => {
     provider: typeof req.body?.provider === 'string' ? req.body.provider.trim() : current.provider,
     skills: req.body?.skills !== undefined ? normalizeSkills(req.body.skills) : current.skills,
     toolsets: req.body?.toolsets !== undefined ? normalizeStringList(req.body.toolsets) : current.toolsets,
+    modelRouting: req.body?.modelRouting !== undefined ? normalizeModelRouting(req.body.modelRouting) : current.modelRouting,
+    discordChannelId: typeof req.body?.discordChannelId === 'string' ? req.body.discordChannelId.trim() : current.discordChannelId,
+    defaultWorkdir: typeof req.body?.defaultWorkdir === 'string' ? req.body.defaultWorkdir.trim() : current.defaultWorkdir,
     rules: typeof req.body?.rules === 'string' ? req.body.rules : current.rules,
     context: typeof req.body?.context === 'string' ? req.body.context : current.context,
     updatedAt: new Date().toISOString(),
@@ -562,15 +745,83 @@ app.post('/api/multi-agents/:id/run', async (req, res) => {
 
   const userPrompt = typeof prompt === 'string' && prompt.trim() ? prompt.trim() : 'Report your current status briefly.'
   const composedPrompt = [agent.rules, agent.context, userPrompt].filter(Boolean).join('\n\n')
+  const routed = selectRoutedModel(agent, userPrompt)
 
   const args = ['chat', '-q', composedPrompt]
-  if (agent.model) args.push('-m', agent.model)
-  if (agent.provider) args.push('--provider', agent.provider)
+  if (routed.model) args.push('-m', routed.model)
+  if (routed.provider) args.push('--provider', routed.provider)
   if (Array.isArray(agent.toolsets) && agent.toolsets.length) args.push('-t', agent.toolsets.join(','))
   if (Array.isArray(agent.skills) && agent.skills.length) args.push('-s', agent.skills.join(','))
 
-  const result = await runHermes(args, 180000)
-  res.status(result.ok ? 200 : 500).json({ ok: result.ok, agent, result })
+  const cwd = typeof agent.defaultWorkdir === 'string' && agent.defaultWorkdir.trim() ? agent.defaultWorkdir.trim() : undefined
+  const result = await runHermes(args, 180000, { cwd })
+  res.status(result.ok ? 200 : 500).json({ ok: result.ok, agent, route: routed, result })
+})
+
+app.get('/api/agent-collaboration/tasks', (_req, res) => {
+  const store = readCollaborationStore()
+  const tasks = [...store.tasks].sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+  res.json({ ok: true, agents: collaborationDirectory(), tasks })
+})
+
+app.post('/api/agent-handoff', (req, res) => {
+  const payload = req.body || {}
+  const from = normalizeAgentKey(payload.from || 'pipo')
+  const to = normalizeAgentKey(payload.to || 'megan')
+  const question = typeof payload.question === 'string' ? payload.question.trim() : ''
+  const type = typeof payload.type === 'string' && payload.type.trim() ? payload.type.trim() : 'consultation'
+
+  if (!question) {
+    return res.status(400).json({ ok: false, error: 'question is required' })
+  }
+  if (!isAllowedHandoff(from, to)) {
+    return res.status(403).json({ ok: false, error: `Handoff ${from} -> ${to} is not allowed in this MVP. Allowed: Pipo <-> Megan.` })
+  }
+  if (from === 'pipo' && isFinancialCodeQuestion(type, question) && to !== 'megan') {
+    return res.status(403).json({ ok: false, error: 'Pipo must consult Megan before financial or financial-code tasks.' })
+  }
+
+  const task = buildCollaborationTask({ ...payload, from, to, type, question })
+  const store = readCollaborationStore()
+  store.tasks.unshift(task)
+  writeCollaborationStore(store)
+  res.json({ ok: true, task, agents: collaborationDirectory() })
+})
+
+app.post('/api/agent-collaboration/tasks/:id/messages', (req, res) => {
+  const { id } = req.params
+  const { author, body, status } = req.body || {}
+  const messageBody = typeof body === 'string' ? body.trim() : ''
+  if (!messageBody) return res.status(400).json({ ok: false, error: 'body is required' })
+
+  const store = readCollaborationStore()
+  const idx = store.tasks.findIndex((task) => task.id === id)
+  if (idx === -1) return res.status(404).json({ ok: false, error: 'Collaboration task not found' })
+
+  const now = new Date().toISOString()
+  const task = store.tasks[idx]
+  const normalizedAuthor = normalizeAgentKey(author || task.to || 'megan')
+  const nextStatus = typeof status === 'string' && ['open', 'waiting_approval', 'approved', 'blocked', 'done'].includes(status)
+    ? status
+    : task.status
+  const next = {
+    ...task,
+    status: nextStatus,
+    updatedAt: now,
+    messages: [
+      ...(Array.isArray(task.messages) ? task.messages : []),
+      {
+        id: `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        author: normalizedAuthor,
+        role: normalizedAuthor === task.from ? 'requester' : 'responder',
+        body: messageBody,
+        createdAt: now,
+      },
+    ],
+  }
+  store.tasks[idx] = next
+  writeCollaborationStore(store)
+  res.json({ ok: true, task: next })
 })
 
 const distPath = path.resolve('dist')
